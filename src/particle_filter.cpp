@@ -61,11 +61,23 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
    *  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
    *  http://www.cplusplus.com/reference/random/default_random_engine/
    */
+  std::default_random_engine gen;
+  normal_distribution<double> dist_x(0.0, std_pos[0]);
+  normal_distribution<double> dist_y(0.0, std_pos[1]);
+  normal_distribution<double> dist_theta(0.0, std_pos[2]);
+
+  for (int i = 0; i < num_particles; ++i) {
+    
+    particles[i].x = particles[i].x + velocity / yaw_rate * (sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta)) + dist_x(gen);
+    particles[i].y = particles[i].y + velocity / yaw_rate * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate * delta_t)) + dist_y(gen);
+    particles[i].theta = particles[i].theta + yaw_rate * delta_t + dist_theta(gen);
+
+  }
 
 }
 
-void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted, 
-                                     vector<LandmarkObs>& observations) {
+void ParticleFilter::dataAssociation(LandmarkObs observation, 
+                                     std::vector<Map::single_landmark_s> landmark_list) {
   /**
    * TODO: Find the predicted measurement that is closest to each 
    *   observed measurement and assign the observed measurement to this 
@@ -74,7 +86,15 @@ void ParticleFilter::dataAssociation(vector<LandmarkObs> predicted,
    *   probably find it useful to implement this method and use it as a helper 
    *   during the updateWeights phase.
    */
-
+  double min_dist = dist(observation.x, observation.y, landmark_list[0].x_f, landmark_list[0].y_f);
+  observation.id = landmark_list[0].id_i;
+  for(int i = 0; i < landmark_list.size(); ++i) {
+    double dist_iter = dist(observation.x, observation.y, landmark_list[i].x_f, landmark_list[i].y_f);
+    if(dist_iter < min_dist) {
+      min_dist = dist_iter;
+      observation.id = i;
+    }
+  }
 }
 
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[], 
@@ -94,6 +114,37 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
    *   (look at equation 3.33) http://planning.cs.uiuc.edu/node99.html
    */
 
+  for(int i = 0; i < num_particles; ++i) {
+    double weight = 1;
+    for(int j = 0; j < observations.size(); ++j) {
+      double x_map, y_map;
+      LandmarkObs tobs;
+      tobs.x = particles[i].x + (cos(particles[i].theta) * observations[i].x) - (sin(particles[i].theta) * observations[i].y);
+      tobs.y = particles[i].y + (sin(particles[i].theta) * observations[i].x) + (cos(particles[i].theta) * observations[i].y);
+      dataAssociation(tobs, map_landmarks.landmark_list);
+      
+      // Values for this observation
+      double sig_x = std_landmark[0];
+      double sig_y = std_landmark[1];
+      double x_obs = tobs.x;
+      double y_obs = tobs.y;
+      double mu_x = map_landmarks.landmark_list[tobs.id].x_f;
+      double mu_y = map_landmarks.landmark_list[tobs.id].y_f;
+
+      // calculate normalization term
+      double gauss_norm;
+      gauss_norm = 1 / (2 * M_PI * sig_x * sig_y);
+
+      // calculate exponent
+      double exponent;
+      exponent = (pow(x_obs - mu_x, 2) / (2 * pow(sig_x, 2)))
+                  + (pow(y_obs - mu_y, 2) / (2 * pow(sig_y, 2)));
+        
+      // calculate weight using normalization terms and exponent
+      weight *= gauss_norm * exp(-exponent);
+    }
+    particles[i].weight = weight;
+  }
 }
 
 void ParticleFilter::resample() {
