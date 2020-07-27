@@ -44,12 +44,13 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
     particle.x = dist_x(gen);
     particle.y = dist_y(gen);
     particle.theta = dist_theta(gen);
-    particle.weight = 1;
-    weights[i] = 1;
+    particle.weight = 1.0;
+    weights.push_back(1.0);
 
     particles.push_back(particle);
 
   }
+  is_initialized = true;
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], 
@@ -67,17 +68,24 @@ void ParticleFilter::prediction(double delta_t, double std_pos[],
   normal_distribution<double> dist_theta(0.0, std_pos[2]);
 
   for (int i = 0; i < num_particles; ++i) {
+
+    if (abs(yaw_rate) < 0.00001) {  
+      particles[i].x += velocity * delta_t * cos(particles[i].theta) + dist_x(gen);
+      particles[i].y += velocity * delta_t * sin(particles[i].theta) + dist_y(gen);
+    } 
+    else {
+      particles[i].x += velocity / yaw_rate * (sin(particles[i].theta + yaw_rate*delta_t) - sin(particles[i].theta)) + dist_x(gen);
+      particles[i].y += velocity / yaw_rate * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate*delta_t)) + dist_y(gen);
+    }
     
-    particles[i].x = particles[i].x + velocity / yaw_rate * (sin(particles[i].theta + yaw_rate * delta_t) - sin(particles[i].theta)) + dist_x(gen);
-    particles[i].y = particles[i].y + velocity / yaw_rate * (cos(particles[i].theta) - cos(particles[i].theta + yaw_rate * delta_t)) + dist_y(gen);
     particles[i].theta = particles[i].theta + yaw_rate * delta_t + dist_theta(gen);
 
   }
 
 }
 
-void ParticleFilter::dataAssociation(LandmarkObs observation, 
-                                     std::vector<Map::single_landmark_s> landmark_list) {
+void ParticleFilter::dataAssociation(LandmarkObs &observation, 
+                                     const std::vector<Map::single_landmark_s> &landmark_list) {
   /**
    * TODO: Find the predicted measurement that is closest to each 
    *   observed measurement and assign the observed measurement to this 
@@ -87,7 +95,7 @@ void ParticleFilter::dataAssociation(LandmarkObs observation,
    *   during the updateWeights phase.
    */
   double min_dist = dist(observation.x, observation.y, landmark_list[0].x_f, landmark_list[0].y_f);
-  observation.id = landmark_list[0].id_i;
+  observation.id = 0;
   for(int i = 0; i < landmark_list.size(); ++i) {
     double dist_iter = dist(observation.x, observation.y, landmark_list[i].x_f, landmark_list[i].y_f);
     if(dist_iter < min_dist) {
@@ -117,10 +125,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   for(int i = 0; i < num_particles; ++i) {
     double weight = 1;
     for(int j = 0; j < observations.size(); ++j) {
-      double x_map, y_map;
       LandmarkObs tobs;
-      tobs.x = particles[i].x + (cos(particles[i].theta) * observations[i].x) - (sin(particles[i].theta) * observations[i].y);
-      tobs.y = particles[i].y + (sin(particles[i].theta) * observations[i].x) + (cos(particles[i].theta) * observations[i].y);
+      tobs.x = particles[i].x + (cos(particles[i].theta) * observations[j].x) - (sin(particles[i].theta) * observations[j].y);
+      tobs.y = particles[i].y + (sin(particles[i].theta) * observations[j].x) + (cos(particles[i].theta) * observations[j].y);
       dataAssociation(tobs, map_landmarks.landmark_list);
       
       // Values for this observation
